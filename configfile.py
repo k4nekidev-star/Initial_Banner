@@ -1,7 +1,9 @@
 
 import json
+import subprocess
 from os import system
 from pathlib import Path
+from shutil import which
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -28,6 +30,16 @@ class Config:
         "n": False
     }
 
+    DEPENDENCIES = {
+        "packages": [
+            "figlet",
+            "fish"
+        ],
+        "python": [
+            "colorama"
+        ]
+    }
+
     def __init__(self):
         self.json_config = BASE_DIR / "config" / "config.json"
         self.banner_config = BASE_DIR / "config" / "banner.txt"
@@ -39,6 +51,54 @@ class Config:
     def Save_file(self, config):
         with open(self.json_config, "w", encoding="utf-8") as file:
             json.dump(config, file, indent=4)
+
+    
+    def Install_dependencies(self):
+        import sys
+        from importlib.util import find_spec
+    
+        missing_packages = [
+            dependency
+            for dependency in self.DEPENDENCIES["packages"]
+            if which(dependency) is None
+        ]
+    
+        missing_python = [
+            dependency
+            for dependency in self.DEPENDENCIES["python"]
+            if find_spec(dependency) is None
+        ]
+    
+        if missing_packages:
+            print("Installing system dependencies...")
+    
+            try:
+                subprocess.run(
+                    ["pkg", "install", "-y", *missing_packages],
+                    check=True
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError) as error:
+                print(f"System installation error: {error}")
+                return False
+    
+        if missing_python:
+            print("Installing Python dependencies...")
+    
+            try:
+                subprocess.run(
+                    [
+                        sys.executable, "-m", "pip",
+                        "install", *missing_python
+                    ],
+                    check=True
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError) as error:
+                print(f"Python installation error: {error}")
+                return False
+    
+        print("All dependencies are installed.")
+        return True
+
 
     def ask(self, message, options):
         while True:
@@ -70,9 +130,15 @@ class Config:
                 "SHELL [fish/bash]: ",
                 self.SHELLS
             )
-            
+
             user = input("Banner text: ")
-            system(f"figlet {user} > {self.banner_config}")
+
+            with open(self.banner_config, "w", encoding="utf-8") as file:
+                subprocess.run(
+                    ["figlet", user],
+                    stdout=file,
+                    check=True
+                )
 
             system("clear")
 
@@ -94,3 +160,19 @@ class Config:
                 return
 
             system("clear")
+
+    def Initial_setup(self):
+        config = self.Read_file()
+
+        if config.get("open_for_first_time", False):
+
+            if not self.Install_dependencies():
+                return False
+
+            self.Realize_changes()
+
+            config = self.Read_file()
+            config["open_for_first_time"] = False
+            self.Save_file(config)
+
+        return True
